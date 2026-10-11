@@ -3,6 +3,7 @@ from fastapi import FastAPI, Depends, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import random
+import httpx
 from sqlalchemy import create_engine, Column, String, DateTime, Integer
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
@@ -112,13 +113,31 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(title="Venom eSports Backend with PostgreSQL & Wallet")
 
 # --- CORS MIDDLEWARE CONFIGURATION ---
+origins = [
+"https://venom-2-0-frontend.vercel.app"
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- WHATSAPP BOT INTEGRATION ---
+WHATSAPP_BOT_URL = "https://whatsapp-otp-bot-6oza.onrender.com/send-whatsapp-otp"
+
+async def trigger_whatsapp_otp(phone: str, otp: str):
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(
+                WHATSAPP_BOT_URL, 
+                json={"phone": phone, "otp": otp}
+            )
+            return response.json()
+        except Exception as e:
+            print(f"WhatsApp OTP bhejne mein error aayi: {e}")
+            return {"success": False, "error": str(e)}
 
 # --- PYDANTIC SCHEMAS ---
 
@@ -193,17 +212,12 @@ def get_db():
 
 @app.get("/")
 def read_root():
-    return {"message": "Venom eSports PostgreSQL Backend is running on Neon Cloud!"}
-
-
-@app.api_route("/", methods=["GET", "HEAD"])
-def read_root():
     return {"message": "Venom Backend is live!"}
 
 # --- AUTHENTICATION ---
 
 @app.post("/api/login")
-def login_user(data: LoginRequest, db: Session = Depends(get_db)):
+async def login_user(data: LoginRequest, db: Session = Depends(get_db)):
     if len(data.phone) != 10:
         raise HTTPException(status_code=400, detail="Invalid phone number length")
     
@@ -219,6 +233,9 @@ def login_user(data: LoginRequest, db: Session = Depends(get_db)):
     )
     db.add(new_otp)
     db.commit()
+    
+    # WhatsApp Bot par OTP trigger karne ke liye async call
+    await trigger_whatsapp_otp(data.phone, otp)
     
     return {
         "success": True, 
@@ -473,7 +490,7 @@ def get_tournament_results(tournament_id: str, phone: str = Header(...), db: Ses
     winners_list = [
         {
             "in_game_name": res.in_game_name, 
-            "uid": res.uid,                  
+            "uid": res.uid,                     
             "reward_points": res.reward_points
         } 
         for res in sorted_results
