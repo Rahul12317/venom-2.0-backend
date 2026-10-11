@@ -4,13 +4,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import random
 import httpx
+import os
+from dotenv import load_dotenv
 from sqlalchemy import create_engine, Column, String, DateTime, Integer
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 
-# Neon PostgreSQL Cloud Database URL with connection pool settings
-SQLALCHEMY_DATABASE_URL = "postgresql+psycopg2://neondb_owner:npg_UrSzw6vY3MDI@ep-dawn-wave-b49ja48y-pooler.c-6.us-east-2.aws.neon.tech/neondb?sslmode=require"
+# --- LOAD ENVIRONMENT VARIABLES ---
+load_dotenv()
 
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
+WHATSAPP_BOT_URL = os.getenv("WHATSAPP_BOT_URL")
+ADMIN_MASTER_OTP = os.getenv("ADMIN_MASTER_OTP", "242008")
+
+# Neon PostgreSQL Cloud Database URL with connection pool settings
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
     pool_size=5,
@@ -112,9 +119,9 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Venom eSports Backend with PostgreSQL & Wallet")
 
-# --- CORS MIDDLEWARE CONFIGURATION ---
+# --- CORS MIDDLEWARE CONFIGURATION (Secured for specific frontend) ---
 origins = [
-"https://venom-2-0-frontend.vercel.app"
+    "https://venom-2-0-frontend.vercel.app"
 ]
 app.add_middleware(
     CORSMiddleware,
@@ -125,8 +132,6 @@ app.add_middleware(
 )
 
 # --- WHATSAPP BOT INTEGRATION ---
-WHATSAPP_BOT_URL = "https://whatsapp-otp-bot-6oza.onrender.com/send-whatsapp-otp"
-
 async def trigger_whatsapp_otp(phone: str, otp: str):
     async with httpx.AsyncClient() as client:
         try:
@@ -200,8 +205,6 @@ class WithdrawalSubmit(BaseModel):
 
 class ActionRequest(BaseModel):
     request_id: int
-
-ADMIN_MASTER_OTP = "242008"
 
 def get_db():
     db = SessionLocal()
