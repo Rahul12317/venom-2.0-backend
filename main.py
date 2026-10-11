@@ -195,6 +195,11 @@ def get_db():
 def read_root():
     return {"message": "Venom eSports PostgreSQL Backend is running on Neon Cloud!"}
 
+
+@app.get("/")
+def read_root():
+    return {"message": "Venom Backend is live!"}
+
 # --- AUTHENTICATION ---
 
 @app.post("/api/login")
