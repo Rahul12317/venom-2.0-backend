@@ -196,7 +196,7 @@ def read_root():
     return {"message": "Venom eSports PostgreSQL Backend is running on Neon Cloud!"}
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def read_root():
     return {"message": "Venom Backend is live!"}
 
