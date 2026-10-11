@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom Scrollbar Hide Utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Global Font & Theme Styles */
+body {
+  margin: 0;
+  background-color: #050a0f;
+  color: #f8fafc;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  overflow-x: hidden;
+}
+
+/* Force Orbitron font for gaming headings and titles */
+.font-gaming, h1, h2, h3, h4 {
+  font-family: 'Orbitron', sans-serif !important;
+}
+
+/* Force Rajdhani font for stats, numbers and points */
+.font-stats {
+  font-family: 'Rajdhani', sans-serif !important;
+}
+
+/* Custom Text Selection Theme */
+::selection {
+  background-color: #14b8a6;
+  color: #030712;
+}
