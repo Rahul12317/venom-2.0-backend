@@ -213,9 +213,9 @@ def get_db():
     finally:
         db.close()
 
-@app.api_route("/", methods=["GET", "HEAD"])
-def read_root():
-    return {"message": "Venom Backend is live!"}
+@app.api_route("/ping", methods=["GET", "HEAD"])
+def ping_server():
+    return {"status": "alive"}
 # --- AUTHENTICATION ---
 
 @app.post("/api/login")
