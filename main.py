@@ -121,7 +121,7 @@ app = FastAPI(title="Venom eSports Backend with PostgreSQL & Wallet")
 
 # --- CORS MIDDLEWARE CONFIGURATION (Secured for specific frontend) ---
 origins = [
-    "https://venom-2-0-frontend.vercel.app"
+    "https://venom-esports.vercel.app"
 ]
 app.add_middleware(
     CORSMiddleware,
