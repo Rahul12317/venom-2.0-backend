@@ -290,7 +290,6 @@ def join_tournament(tournament_id: str, data: JoinTournamentRequest, phone: str 
     if not tournament:
         raise HTTPException(status_code=404, detail="Tournament not found.")
         
-    # 🌟 SLOT CAPACITY CHECK
     current_joined_count = db.query(TournamentJoinModel).filter(TournamentJoinModel.tournament_id == tournament_id).count()
     if current_joined_count >= tournament.total_slots:
         raise HTTPException(status_code=400, detail="Slots are fully booked!")
@@ -378,3 +377,182 @@ def get_user_transactions(phone: str = Header(...), db: Session = Depends(get_db
     transactions = db.query(WalletTransactionModel).filter(WalletTransactionModel.phone == phone).order_by(WalletTransactionModel.created_at.desc()).all()
     tx_list = [{"amount": tx.amount, "type": tx.transaction_type, "description": tx.description, "date": tx.created_at} for tx in transactions]
     return {"success": True, "phone": phone, "transactions": tx_list}
+
+# --- WALLET RECHARGE & WITHDRAWAL ROUTES (MISSING PREVIOUSLY) ---
+
+@app.post("/api/wallet/recharge/submit")
+def submit_recharge(data: RechargeSubmit, phone: str = Header(...), db: Session = Depends(get_db)):
+    existing = db.query(RechargeRequestModel).filter(RechargeRequestModel.utr_number == data.utr_number).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="This UTR number has already been submitted.")
+    
+    req = RechargeRequestModel(phone=phone, amount=data.amount, utr_number=data.utr_number, status="Pending")
+    db.add(req)
+    db.commit()
+    return {"success": True, "message": "Recharge request submitted successfully!"}
+
+@app.post("/api/wallet/withdraw/submit")
+def submit_withdrawal(data: WithdrawalSubmit, phone: str = Header(...), db: Session = Depends(get_db)):
+    wallet = db.query(UserWalletModel).filter(UserWalletModel.phone == phone).first()
+    if not wallet or (wallet.winnings or 0) < data.amount:
+        raise HTTPException(status_code=400, detail="Insufficient winnings balance.")
+    
+    req = WithdrawalRequestModel(phone=phone, amount=data.amount, upi_id=data.upi_id, status="Pending")
+    db.add(req)
+    db.commit()
+    return {"success": True, "message": "Withdrawal request submitted successfully!"}
+
+# --- ADMIN ROUTES (MISSING PREVIOUSLY) ---
+
+@app.get("/api/admin/recharge/pending")
+def get_pending_recharges(phone: str = Header(...), db: Session = Depends(get_db)):
+    if phone != "9170980044":
+        raise HTTPException(status_code=403, detail="Unauthorized.")
+    recharges = db.query(RechargeRequestModel).filter(RechargeRequestModel.status == "Pending").all()
+    list_r = [{"id": r.id, "phone": r.phone, "amount": r.amount, "utr_number": r.utr_number} for r in recharges]
+    return {"success": True, "pending_recharges": list_r}
+
+@app.post("/api/admin/recharge/approve")
+def approve_recharge(data: ActionRequest, phone: str = Header(...), db: Session = Depends(get_db)):
+    if phone != "9170980044":
+        raise HTTPException(status_code=403, detail="Unauthorized.")
+    req = db.query(RechargeRequestModel).filter(RechargeRequestModel.id == data.request_id, RechargeRequestModel.status == "Pending").first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found.")
+    
+    req.status = "Approved"
+    wallet = db.query(UserWalletModel).filter(UserWalletModel.phone == req.phone).first()
+    if wallet:
+        wallet.bonus = (wallet.bonus or 0) + req.amount
+        wallet.balance = (wallet.bonus or 0) + (wallet.winnings or 0)
+    
+    tx = WalletTransactionModel(phone=req.phone, amount=req.amount, transaction_type="CREDIT", description=f"Recharge Approved (UTR: {req.utr_number})")
+    db.add(tx)
+    db.commit()
+    return {"success": True, "message": "Recharge approved & points credited!"}
+
+@app.get("/api/admin/withdrawal/pending")
+def get_pending_withdrawals(phone: str = Header(...), db: Session = Depends(get_db)):
+    if phone != "9170980044":
+        raise HTTPException(status_code=403, detail="Unauthorized.")
+    withdrawals = db.query(WithdrawalRequestModel).filter(WithdrawalRequestModel.status == "Pending").all()
+    list_w = [{"id": w.id, "phone": w.phone, "amount": w.amount, "upi_id": w.upi_id} for w in withdrawals]
+    return {"success": True, "pending_withdrawals": list_w}
+
+@app.post("/api/admin/withdrawal/approve")
+def approve_withdrawal(data: ActionRequest, phone: str = Header(...), db: Session = Depends(get_db)):
+    if phone != "9170980044":
+        raise HTTPException(status_code=403, detail="Unauthorized.")
+    req = db.query(WithdrawalRequestModel).filter(WithdrawalRequestModel.id == data.request_id, WithdrawalRequestModel.status == "Pending").first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found.")
+    
+    req.status = "Approved"
+    wallet = db.query(UserWalletModel).filter(UserWalletModel.phone == req.phone).first()
+    if wallet:
+        wallet.withdrawn = (wallet.withdrawn or 0) + req.amount
+    
+    tx = WalletTransactionModel(phone=req.phone, amount=req.amount, transaction_type="DEBIT", description=f"Withdrawal Approved (UPI: {req.upi_id})")
+    db.add(tx)
+    db.commit()
+    return {"success": True, "message": "Withdrawal cashout approved!"}
+
+@app.post("/api/admin/tournament/create")
+def create_tournament(data: TournamentCreate, phone: str = Header(...), db: Session = Depends(get_db)):
+    if phone != "9170980044":
+        raise HTTPException(status_code=403, detail="Unauthorized.")
+    existing = db.query(TournamentModel).filter(TournamentModel.id == data.id).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Tournament ID already exists.")
+    
+    t = TournamentModel(
+        id=data.id,
+        title=data.title,
+        map_name=data.map_name,
+        match_type=data.match_type,
+        prize_pool=data.prize_pool,
+        date_time=data.date_time,
+        start_time=data.start_time,
+        end_time=data.end_time,
+        entry_fee=data.entry_fee,
+        total_slots=data.total_slots,
+        filled_slots=0,
+        reward_info=data.reward_info,
+        status=data.status
+    )
+    db.add(t)
+    db.commit()
+    return {"success": True, "message": "Tournament created successfully!"}
+
+@app.put("/api/admin/tournament/edit/{tournament_id}")
+def edit_tournament(tournament_id: str, data: TournamentUpdate, phone: str = Header(...), db: Session = Depends(get_db)):
+    if phone != "9170980044":
+        raise HTTPException(status_code=403, detail="Unauthorized.")
+    t = db.query(TournamentModel).filter(TournamentModel.id == tournament_id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Tournament not found.")
+    
+    t.title = data.title
+    t.map_name = data.map_name
+    t.match_type = data.match_type
+    t.prize_pool = data.prize_pool
+    t.date_time = data.date_time
+    t.start_time = data.start_time
+    t.end_time = data.end_time
+    t.entry_fee = data.entry_fee
+    t.total_slots = data.total_slots
+    t.reward_info = data.reward_info
+    t.status = data.status
+    db.commit()
+    return {"success": True, "message": "Tournament updated successfully!"}
+
+@app.get("/api/admin/tournament/{tournament_id}/players")
+def get_tournament_players(tournament_id: str, phone: str = Header(...), db: Session = Depends(get_db)):
+    if phone != "9170980044":
+        raise HTTPException(status_code=403, detail="Unauthorized.")
+    participants = db.query(TournamentJoinModel).filter(TournamentJoinModel.tournament_id == tournament_id).all()
+    players = [{"ign": p.in_game_name, "uid": p.uid, "team_name": p.team_name, "phone": p.phone} for p in participants]
+    return {"success": True, "players": players}
+
+@app.post("/api/admin/tournament/result/{tournament_id}")
+def submit_tournament_result(tournament_id: str, data: ResultCreate, phone: str = Header(...), db: Session = Depends(get_db)):
+    if phone != "9170980044":
+        raise HTTPException(status_code=403, detail="Unauthorized.")
+    
+    tournament = db.query(TournamentModel).filter(TournamentModel.id == tournament_id).first()
+    if tournament:
+        tournament.status = "Completed"
+    
+    res = TournamentResultModel(tournament_id=tournament_id, in_game_name=data.in_game_name, uid=data.uid, reward_points=str(data.reward_points))
+    db.add(res)
+    
+    participant = db.query(TournamentJoinModel).filter(TournamentJoinModel.tournament_id == tournament_id, TournamentJoinModel.uid == data.uid).first()
+    if participant:
+        wallet = db.query(UserWalletModel).filter(UserWalletModel.phone == participant.phone).first()
+        if wallet:
+            wallet.winnings = (wallet.winnings or 0) + data.reward_points
+            wallet.balance = (wallet.bonus or 0) + (wallet.winnings or 0)
+            tx = WalletTransactionModel(phone=participant.phone, amount=data.reward_points, transaction_type="CREDIT", description=f"Tournament Winnings: {tournament.title if tournament else tournament_id}")
+            db.add(tx)
+    
+    db.commit()
+    return {"success": True, "message": "Result saved & winnings credited!"}
+
+@app.post("/api/admin/tournament/room/{tournament_id}")
+def publish_room_credentials(tournament_id: str, room_data: dict, phone: str = Header(...), db: Session = Depends(get_db)):
+    if phone != "9170980044":
+        raise HTTPException(status_code=403, detail="Unauthorized.")
+    t = db.query(TournamentModel).filter(TournamentModel.id == tournament_id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Tournament not found.")
+    
+    t.room_id = room_data.get("room_id")
+    t.room_password = room_data.get("room_password")
+    db.commit()
+    return {"success": True, "message": "Room credentials published successfully!"}
+
+@app.get("/api/tournaments/results/{tournament_id}")
+def get_tournament_results(tournament_id: str, db: Session = Depends(get_db)):
+    results = db.query(TournamentResultModel).filter(TournamentResultModel.tournament_id == tournament_id).all()
+    winners = [{"in_game_name": r.in_game_name, "uid": r.uid, "reward_points": r.reward_points} for r in results]
+    return {"success": True, "winners": winners}
