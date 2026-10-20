@@ -60,7 +60,7 @@ class TournamentModel(Base):
     room_id = Column(String, nullable=True)
     room_password = Column(String, nullable=True)
     
-    # 🌟 Background Image & Brightness Columns added
+    # 🌟 Background Image & Brightness Columns
     bg_image = Column(String, nullable=True)
     bg_brightness = Column(Integer, default=50, nullable=True)
 
@@ -156,7 +156,6 @@ class AdminVerifyRequest(BaseModel):
     phone: str
     otp: str
 
-# 🌟 Pydantic Model updated to receive bg_image and bg_brightness
 class TournamentCreate(BaseModel):
     id: str
     title: str
@@ -173,7 +172,6 @@ class TournamentCreate(BaseModel):
     bg_image: Optional[str] = None
     bg_brightness: Optional[int] = 50
 
-# 🌟 Pydantic Model updated for Tournament Edit
 class TournamentUpdate(BaseModel):
     title: str
     map_name: str
@@ -284,8 +282,8 @@ def get_tournaments(db: Session = Depends(get_db)):
             "status": t.status,
             "room_id": t.room_id,          
             "room_password": t.room_password,
-            "bg_image": t.bg_image,            # 🌟 Sent to frontend
-            "bg_brightness": t.bg_brightness   # 🌟 Sent to frontend
+            "bg_image": t.bg_image,
+            "bg_brightness": t.bg_brightness
         })
     return {"success": True, "tournaments": formatted_tournaments}
 
@@ -474,7 +472,6 @@ def create_tournament(data: TournamentCreate, phone: str = Header(...), db: Sess
     if existing:
         raise HTTPException(status_code=400, detail="Tournament ID already exists.")
     
-    # 🌟 Saving bg_image and bg_brightness into database
     t = TournamentModel(
         id=data.id,
         title=data.title,
