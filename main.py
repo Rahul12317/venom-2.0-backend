@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from fastapi import FastAPI, Depends, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import Optional
 import random
 import httpx
 import os
@@ -58,6 +59,10 @@ class TournamentModel(Base):
 
     room_id = Column(String, nullable=True)
     room_password = Column(String, nullable=True)
+    
+    # 🌟 Background Image & Brightness Columns added
+    bg_image = Column(String, nullable=True)
+    bg_brightness = Column(Integer, default=50, nullable=True)
 
 class TournamentJoinModel(Base):
     __tablename__ = "tournament_participants"
@@ -151,6 +156,7 @@ class AdminVerifyRequest(BaseModel):
     phone: str
     otp: str
 
+# 🌟 Pydantic Model updated to receive bg_image and bg_brightness
 class TournamentCreate(BaseModel):
     id: str
     title: str
@@ -164,7 +170,10 @@ class TournamentCreate(BaseModel):
     total_slots: int
     reward_info: str
     status: str = "Upcoming"
+    bg_image: Optional[str] = None
+    bg_brightness: Optional[int] = 50
 
+# 🌟 Pydantic Model updated for Tournament Edit
 class TournamentUpdate(BaseModel):
     title: str
     map_name: str
@@ -177,6 +186,8 @@ class TournamentUpdate(BaseModel):
     total_slots: int
     reward_info: str
     status: str
+    bg_image: Optional[str] = None
+    bg_brightness: Optional[int] = 50
 
 class JoinTournamentRequest(BaseModel):
     phone: str
@@ -272,7 +283,9 @@ def get_tournaments(db: Session = Depends(get_db)):
             "reward": t.reward_info,
             "status": t.status,
             "room_id": t.room_id,          
-            "room_password": t.room_password 
+            "room_password": t.room_password,
+            "bg_image": t.bg_image,            # 🌟 Sent to frontend
+            "bg_brightness": t.bg_brightness   # 🌟 Sent to frontend
         })
     return {"success": True, "tournaments": formatted_tournaments}
 
@@ -378,8 +391,6 @@ def get_user_transactions(phone: str = Header(...), db: Session = Depends(get_db
     tx_list = [{"amount": tx.amount, "type": tx.transaction_type, "description": tx.description, "date": tx.created_at} for tx in transactions]
     return {"success": True, "phone": phone, "transactions": tx_list}
 
-# --- WALLET RECHARGE & WITHDRAWAL ROUTES (MISSING PREVIOUSLY) ---
-
 @app.post("/api/wallet/recharge/submit")
 def submit_recharge(data: RechargeSubmit, phone: str = Header(...), db: Session = Depends(get_db)):
     existing = db.query(RechargeRequestModel).filter(RechargeRequestModel.utr_number == data.utr_number).first()
@@ -401,8 +412,6 @@ def submit_withdrawal(data: WithdrawalSubmit, phone: str = Header(...), db: Sess
     db.add(req)
     db.commit()
     return {"success": True, "message": "Withdrawal request submitted successfully!"}
-
-# --- ADMIN ROUTES (MISSING PREVIOUSLY) ---
 
 @app.get("/api/admin/recharge/pending")
 def get_pending_recharges(phone: str = Header(...), db: Session = Depends(get_db)):
@@ -465,6 +474,7 @@ def create_tournament(data: TournamentCreate, phone: str = Header(...), db: Sess
     if existing:
         raise HTTPException(status_code=400, detail="Tournament ID already exists.")
     
+    # 🌟 Saving bg_image and bg_brightness into database
     t = TournamentModel(
         id=data.id,
         title=data.title,
@@ -478,7 +488,9 @@ def create_tournament(data: TournamentCreate, phone: str = Header(...), db: Sess
         total_slots=data.total_slots,
         filled_slots=0,
         reward_info=data.reward_info,
-        status=data.status
+        status=data.status,
+        bg_image=data.bg_image,
+        bg_brightness=data.bg_brightness
     )
     db.add(t)
     db.commit()
@@ -503,6 +515,9 @@ def edit_tournament(tournament_id: str, data: TournamentUpdate, phone: str = Hea
     t.total_slots = data.total_slots
     t.reward_info = data.reward_info
     t.status = data.status
+    t.bg_image = data.bg_image
+    t.bg_brightness = data.bg_brightness
+    
     db.commit()
     return {"success": True, "message": "Tournament updated successfully!"}
 
