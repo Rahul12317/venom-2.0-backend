@@ -120,7 +120,7 @@ class WithdrawalRequestModel(Base):
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Venom eSports Backend with PostgreSQL & Wallet")
+app = FastAPI(title="Veprax eSports Backend with PostgreSQL & Wallet")
 
 origins = [
     "https://veprax-esports.vercel.app"
@@ -134,11 +134,16 @@ app.add_middleware(
 )
 
 async def trigger_whatsapp_otp(phone: str, otp: str):
+    # 🌟 Updated WhatsApp message format
+    message_text = f"""veprax eSports  
+Your secure login verification code is: *{otp}*
+⚠️ Do not share this code with anyone. Valid for 2 minutes."""
+
     async with httpx.AsyncClient() as client:
         try:
             response = await client.post(
                 WHATSAPP_BOT_URL, 
-                json={"phone": phone, "otp": otp}
+                json={"phone": phone, "otp": otp, "message": message_text}
             )
             return response.json()
         except Exception as e:
