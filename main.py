@@ -123,7 +123,7 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(title="Venom eSports Backend with PostgreSQL & Wallet")
 
 origins = [
-    "https://venom-esports.vercel.app"
+    "https://veprax-esports.vercel.app"
 ]
 app.add_middleware(
     CORSMiddleware,
