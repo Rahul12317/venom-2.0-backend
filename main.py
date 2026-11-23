@@ -37,6 +37,36 @@ OTP_MAX_PER_IP_PER_HOUR = 15
 otp_phone_attempts = defaultdict(list)
 otp_ip_attempts = defaultdict(list)
 
+# --- 24-HOUR WALLET REQUEST LIMIT CONFIG ---
+MAX_REQUESTS_PER_24H = 2
+
+
+def enforce_24h_request_limit(db: Session, model, phone: str, action_label: str):
+    window_start = datetime.utcnow() - timedelta(hours=24)
+    recent_reqs = (
+        db.query(model)
+        .filter(
+            model.phone == phone,
+            model.created_at >= window_start
+        )
+        .order_by(model.created_at.asc())
+        .all()
+    )
+
+    if len(recent_reqs) >= MAX_REQUESTS_PER_24H:
+        oldest_ts = recent_reqs[0].created_at
+        retry_after = oldest_ts + timedelta(hours=24)
+        remaining_seconds = max(1, int((retry_after - datetime.utcnow()).total_seconds()))
+        rem_hours = remaining_seconds // 3600
+        rem_mins = (remaining_seconds % 3600) // 60
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"24 ghante mein sirf {MAX_REQUESTS_PER_24H} {action_label} requests allow hain. "
+                f"Kripya {rem_hours}h {rem_mins}m baad dobara koshish karein."
+            )
+        )
+
 
 def get_client_ip(request: Request) -> str:
     forwarded_for = request.headers.get("x-forwarded-for", "")
@@ -133,7 +163,7 @@ class TournamentModel(Base):
     room_id = Column(String, nullable=True)
     room_password = Column(String, nullable=True)
 
-    # 🌟 Background Image & Brightness Columns
+    # Background Image & Brightness Columns
     bg_image = Column(String, nullable=True)
     bg_brightness = Column(Integer, default=50, nullable=True)
 
@@ -215,7 +245,6 @@ app.add_middleware(
 
 
 async def trigger_whatsapp_otp(phone: str, otp: str):
-    # 🌟 Updated WhatsApp message format
     message_text = f"""veprax eSports  
 Your secure login verification code is: *{otp}*
 ⚠️ Do not share this code with anyone. Valid for 2 minutes."""
@@ -420,7 +449,6 @@ def request_user_data_deletion(
     )
     db.add(deletion_log)
 
-    # SignupBonusClaimModel ko delete nahi kiya gaya hai taaki repeat signup par dubara bonus na mile
     db.commit()
     return {"success": True, "message": "Account data deletion processed successfully."}
 
@@ -557,11 +585,14 @@ def get_user_transactions(phone: str = Header(...), db: Session = Depends(get_db
 
 @app.post("/api/wallet/recharge/submit")
 def submit_recharge(data: RechargeSubmit, phone: str = Header(...), db: Session = Depends(get_db)):
-    existing = db.query(RechargeRequestModel).filter(RechargeRequestModel.utr_number == data.utr_number).first()
+    clean_phone = phone.strip()
+    enforce_24h_request_limit(db, RechargeRequestModel, clean_phone, "recharge/redeem")
+
+    existing = db.query(RechargeRequestModel).filter(RechargeRequestModel.utr_number == data.utr_number.strip()).first()
     if existing:
         raise HTTPException(status_code=400, detail="This UTR number has already been submitted.")
 
-    req = RechargeRequestModel(phone=phone, amount=data.amount, utr_number=data.utr_number, status="Pending")
+    req = RechargeRequestModel(phone=clean_phone, amount=data.amount, utr_number=data.utr_number.strip(), status="Pending")
     db.add(req)
     db.commit()
     return {"success": True, "message": "Recharge request submitted successfully!"}
@@ -569,11 +600,17 @@ def submit_recharge(data: RechargeSubmit, phone: str = Header(...), db: Session 
 
 @app.post("/api/wallet/withdraw/submit")
 def submit_withdrawal(data: WithdrawalSubmit, phone: str = Header(...), db: Session = Depends(get_db)):
-    wallet = db.query(UserWalletModel).filter(UserWalletModel.phone == phone).first()
+    clean_phone = phone.strip()
+    enforce_24h_request_limit(db, WithdrawalRequestModel, clean_phone, "withdrawal")
+
+    wallet = db.query(UserWalletModel).filter(UserWalletModel.phone == clean_phone).first()
     if not wallet or (wallet.winnings or 0) < data.amount:
         raise HTTPException(status_code=400, detail="Insufficient winnings balance.")
 
-    req = WithdrawalRequestModel(phone=phone, amount=data.amount, upi_id=data.upi_id, status="Pending")
+    wallet.winnings = (wallet.winnings or 0) - data.amount
+    wallet.balance = (wallet.bonus or 0) + (wallet.winnings or 0)
+
+    req = WithdrawalRequestModel(phone=clean_phone, amount=data.amount, upi_id=data.upi_id.strip(), status="Pending")
     db.add(req)
     db.commit()
     return {"success": True, "message": "Withdrawal request submitted successfully!"}
@@ -707,8 +744,8 @@ def submit_tournament_result(tournament_id: str, data: ResultCreate, phone: str 
         raise HTTPException(status_code=403, detail="Unauthorized.")
 
     tournament = db.query(TournamentModel).filter(TournamentModel.id == tournament_id).first()
-    if tournament:
-        tournament.status = "Completed"
+    if not tournament:
+        raise HTTPException(status_code=404, detail="Tournament not found.")
 
     res = TournamentResultModel(tournament_id=tournament_id, in_game_name=data.in_game_name, uid=data.uid, reward_points=str(data.reward_points))
     db.add(res)
@@ -719,7 +756,7 @@ def submit_tournament_result(tournament_id: str, data: ResultCreate, phone: str 
         if wallet:
             wallet.winnings = (wallet.winnings or 0) + data.reward_points
             wallet.balance = (wallet.bonus or 0) + (wallet.winnings or 0)
-            tx = WalletTransactionModel(phone=participant.phone, amount=data.reward_points, transaction_type="CREDIT", description=f"Tournament Winnings: {tournament.title if tournament else tournament_id}")
+            tx = WalletTransactionModel(phone=participant.phone, amount=data.reward_points, transaction_type="CREDIT", description=f"Tournament Winnings: {tournament.title}")
             db.add(tx)
 
     db.commit()
