@@ -489,6 +489,36 @@ def get_tournaments(db: Session = Depends(get_db)):
     return {"success": True, "tournaments": formatted_tournaments}
 
 
+@app.get("/api/leaderboard")
+def get_leaderboard(db: Session = Depends(get_db)):
+    wallets = (
+        db.query(UserWalletModel)
+        .order_by(UserWalletModel.winnings.desc(), UserWalletModel.balance.desc())
+        .limit(100)
+        .all()
+    )
+
+    leaderboard_list = []
+    for idx, w in enumerate(wallets, start=1):
+        raw_phone = str(w.phone or "").strip()
+        if len(raw_phone) >= 6:
+            masked_phone = f"{raw_phone[:4]}{'X' * (len(raw_phone) - 6)}{raw_phone[-2:]}"
+        else:
+            masked_phone = raw_phone or "Player"
+
+        earned_pts = int(w.winnings or 0)
+        total_pts = int((w.bonus or 0) + (w.winnings or 0))
+
+        leaderboard_list.append({
+            "rank": idx,
+            "phone": masked_phone,
+            "earned_points": earned_pts,
+            "total_pts": total_pts
+        })
+
+    return {"success": True, "leaderboard": leaderboard_list}
+
+
 @app.post("/api/tournament/join/{tournament_id}")
 def join_tournament(tournament_id: str, data: JoinTournamentRequest, phone: str = Header(...), db: Session = Depends(get_db)):
     wallet = get_or_create_wallet_with_bonus_check(db, phone)
